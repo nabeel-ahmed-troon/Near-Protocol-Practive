@@ -10,11 +10,5 @@ echo ==========================================
 echo
 echo "Deploying Smart Contract"
 echo 
-near deploy --accountId lotteri.testnet --wasmFile target/wasm32-unknown-unknown/release/lottery.wasm
+near deploy --accountId dev-1653124157396-95960748670756 --wasmFile target/wasm32-unknown-unknown/release/lottery.wasm
 
-echo ==========================================
-echo
-echo "Buying Lottery Ticket"
-echo
-echo ==========================================
-# near call lotteri.testnet buy_ticket '' --accountId lotteri.testnet
