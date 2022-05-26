@@ -76,7 +76,7 @@ impl FTActionsReceiver for Lottery{
         amount: U128,
         msg: String,
     ) -> PromiseOrValue<U128>{
-        require!(self.lottery_state==LOTTERYSTATE::OPEN,"Lottery is on Different State");
+        require!(self.lottery_state==LOTTERYSTATE::OPEN,"Lottery is on Different State OR Tickets Sold.");
         assert!(
             self.approved_ft==env::predecessor_account_id(),
             "Only approved FT can be staked"

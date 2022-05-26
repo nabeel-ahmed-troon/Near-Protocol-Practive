@@ -1,16 +1,21 @@
 use near_sdk::borsh::{self,BorshSerialize,BorshDeserialize};
 use near_sdk::collections::{UnorderedMap};
-use near_sdk::{env,near_bindgen,AccountId,PanicOnDefault, require,log};
+use near_sdk::{env,BorshStorageKey,near_bindgen,AccountId,PanicOnDefault, require,log,PromiseResult};
 use near_sdk::json_types::{U128};
 use near_sdk::CryptoHash;
 
-// use crate::internal::*;
+use crate::internal::*;
 use crate::nft_cross_call::*;
+use crate::enumeration::*;
+use crate::callback::*;
 use crate::airdrop_ft::*;
 mod airdrop_ft;
 mod nft_cross_call;
 mod internal;
+mod enumeration;
+mod callback;
 
+#[derive(Debug)]
 #[near_bindgen]
 #[derive(BorshDeserialize,BorshSerialize,PanicOnDefault)]
 pub struct Lottery{
@@ -27,20 +32,10 @@ pub struct Lottery{
     //For Airdrop of Ft
     claimers: UnorderedMap<AccountId,U128>,
     claimers_count:u128,
-
-
-
+    airdrop_amount:U128,
+    airdrop_revoke: bool,
 }
-
-// #[near_bindgen]
-// #[derive(BorshDeserialize,BorshSerialize,PanicOnDefault)]
-// pub struct FTAirdrop{
-//     claimers: UnorderedMap<AccountId,U128>,
-//     claimers_count:u128,
-
-// }
-
-
+#[derive(Debug)]
 #[derive(BorshDeserialize,BorshSerialize,)]
 #[derive(PartialEq)]
 enum LOTTERYSTATE{
@@ -49,6 +44,12 @@ enum LOTTERYSTATE{
     CALCULATINGWINNER,
     CLAIMREWARD,
 }
+
+#[derive(BorshStorageKey, BorshSerialize)]
+enum StorageKeys{
+    CLAIMERS
+}
+
 #[near_bindgen]
 impl Lottery{
     //Contract Initializaton
@@ -67,17 +68,21 @@ impl Lottery{
             winning_nft_token_id: 1,
             approved_ft: "lottery_ft.testnet".to_string().parse().unwrap(),
             //Ft Airdrop
-            claimers: UnorderedMap::new(b"m"),
-            claimers_count:0
+            claimers: UnorderedMap::new(StorageKeys::CLAIMERS),
+            claimers_count:0,
+            airdrop_amount:U128::from(5000000000000000000000000),
+            airdrop_revoke: false
         };
         _this
     }
 
-    pub fn start_new_lottery(&mut self){
+    pub fn start_new_lottery(&mut self,ticket_limit:u64,ticket_price:U128,approved_ft:AccountId){
         require!(self.owner==env::predecessor_account_id(),"Only owner can Start Lottery");
         require!(self.lottery_state==LOTTERYSTATE::CLOSED,"Previous Lottery is Not Ended.");    
-        self.ticket_id+=1;
-        self.ticket_limit=10;
+        self.ticket_id=0;
+        self.ticket_limit=ticket_limit;
+        self.ticket_price=ticket_price;
+        self.approved_ft=approved_ft;
         self.lottery_state= LOTTERYSTATE::OPEN;
 
         if self.winner_picked==true{
@@ -86,7 +91,6 @@ impl Lottery{
         }
 
     }
-
 
     pub fn pick_winner(&mut self){
         //Checking Lottery State
@@ -111,55 +115,91 @@ impl Lottery{
         self.lottery_state=LOTTERYSTATE::CLAIMREWARD;
     }
 
-    pub fn get_players(&self)->&Vec<AccountId>{
-        let s= &self.players;
-        log!("Vector of Players : {:?}",s);
-        s
-    }
-    pub fn get_ticket_id(&self)->u64{
-        let s=self.ticket_id;
-        s
-    }
+    
 
-    pub fn get_lottery_state(&self)->String{
-        let state= &self.lottery_state;
-        match state {
-            LOTTERYSTATE::OPEN=>"Open".to_string(),
-            LOTTERYSTATE::CLOSED=>"Closed".to_string(),
-            LOTTERYSTATE::CALCULATINGWINNER=>"Calculationg Winner".to_string(),
-            LOTTERYSTATE::CLAIMREWARD=>"ClaimReward".to_string(),
-        }
-
-    }
-
-
-    // pub fn claim_reward()
+    
 }
-// #[near_bindgen]
-// impl FTAirdrop{
-//     #[init]
-//     fn new()->Self{
-//         let this=Self{
-//             claimers: UnorderedMap::new(b"m"),
-//             claimers_count:0
-//         };
-//         this
-//     }
-// }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use near_sdk::test_utils::{get_logs, VMContextBuilder};
+    use near_sdk::test_utils::{accounts, VMContextBuilder};
     use near_sdk::{testing_env, AccountId};
 
-    // part of writing unit tests is setting up a mock context
-    // provide a `predecessor` here, it'll modify the default context
+    
     fn get_context(predecessor: AccountId) -> VMContextBuilder {
         let mut builder = VMContextBuilder::new();
         builder.predecessor_account_id(predecessor);
         builder
     }
 
+    
     // TESTS HERE
+    #[test]
+    fn init_lottery(){
+        let context= get_context(accounts(1));
+        testing_env!(context.build());
+        let contract=Lottery::new();
+        println!("{:#?}",contract);
+        assert!(contract.winner_picked==false);
+        assert!(contract.lottery_state==LOTTERYSTATE::CLOSED);
+    }
+
+    #[test]
+    fn start_new_lottery(){
+        let context= get_context(accounts(1));
+        testing_env!(context.build());
+        let mut contract=Lottery::new();
+        let con1=contract.ticket_price;
+        println!("New : {:#?}",contract);
+        contract.start_new_lottery(10, U128::from(2000000000000000000000000), "ft.testnet".to_string().parse().unwrap());
+        let con2=contract.ticket_price;
+        assert_ne!(con1,con2);
+    }
+
+    #[test]
+    #[should_panic(expected="Airdroping is Stopped by owner")]
+    fn revoke_airdrop(){
+        let context= get_context(accounts(1));
+        testing_env!(context.build());
+        let mut contract=Lottery::new();
+        //checking airdrop is revoked or not
+        assert!(contract.airdrop_revoke==false);
+        //revoking airdrop
+        contract.airdrop_revoke=true;
+        //checking airdrop rovoked or not
+        assert!(contract.airdrop_revoke==true);
+        //trying for airdrop
+        contract.ft_airdrop();
+        
+
+    }
+    #[test]
+    fn resume_airdrop(){
+        let context= get_context(accounts(1));
+        testing_env!(context.build());
+        let mut contract=Lottery::new();
+        //checking airdrop is revoked or not
+        assert!(contract.airdrop_revoke==false);
+        //revoking airdrop
+        contract.airdrop_revoke=true;
+        //checking airdrop rovoked or not
+        assert!(contract.airdrop_revoke==true);
+        //resuming airdrop
+        contract.airdrop_revoke=false;
+        assert!(contract.airdrop_revoke==false);
+        //trying for airdrop
+        contract.ft_airdrop();
+        
+
+    }
+
+
+
+
+    
+
+    
+
+
 }
